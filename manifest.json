@@ -1,16 +1,18 @@
 {
     "domain": "scribe",
     "name": "Scribe",
-    "version": "1.5.1",
-    "documentation": "https://github.com/jonathan-gatard/scribe",
-    "dependencies": [],
     "codeowners": [
         "@jonathan-gatard"
     ],
+    "config_flow": true,
+    "dependencies": [],
+    "documentation": "https://github.com/jonathan-gatard/scribe",
+    "integration_type": "service",
+    "iot_class": "local_push",
+    "issue_tracker": "https://github.com/jonathan-gatard/scribe/issues",
     "requirements": [
         "psycopg2-binary>=2.9.0",
         "sqlalchemy>=2.0.0"
     ],
-    "config_flow": true,
-    "iot_class": "local_push"
+    "version": "1.6.0"
 }
