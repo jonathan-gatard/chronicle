@@ -5,6 +5,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, Event
+from homeassistant.const import (
     EVENT_STATE_CHANGED,
     EVENT_HOMEASSISTANT_STOP,
 )
