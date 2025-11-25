@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "Configure Chronicle",
-                "description": "Enter your TimescaleDB connection details.",
+                "description": "Chronicle stores your Home Assistant history in TimescaleDB.\n\nFor more information on configuration options, see the [TimescaleDB Documentation](https://docs.timescale.com/).",
                 "data": {
                     "db_url": "Database URL (postgresql://user:pass@host/db)",
                     "table_name": "Table Name",
