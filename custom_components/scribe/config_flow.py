@@ -33,13 +33,17 @@ from .const import (
     CONF_BATCH_SIZE,
     CONF_FLUSH_INTERVAL,
     CONF_ENABLE_STATISTICS,
+    CONF_MAX_QUEUE_SIZE,
+    CONF_BUFFER_ON_FAILURE,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
     DEFAULT_RECORD_STATES,
     DEFAULT_RECORD_EVENTS,
     DEFAULT_BATCH_SIZE,
     DEFAULT_FLUSH_INTERVAL,
+    DEFAULT_MAX_QUEUE_SIZE,
     DEFAULT_ENABLE_STATISTICS,
+    DEFAULT_BUFFER_ON_FAILURE,
     DEFAULT_DB_PORT,
     DEFAULT_DB_USER,
     DEFAULT_DB_NAME,
@@ -206,6 +210,18 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS
                         ),
                     ): selector.BooleanSelector(),
+                    vol.Optional(
+                        CONF_BUFFER_ON_FAILURE,
+                        default=self.config_entry.options.get(
+                            CONF_BUFFER_ON_FAILURE, DEFAULT_BUFFER_ON_FAILURE
+                        ),
+                    ): selector.BooleanSelector(),
+                    vol.Optional(
+                        CONF_MAX_QUEUE_SIZE,
+                        default=self.config_entry.options.get(
+                            CONF_MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE
+                        ),
+                    ): selector.NumberSelector(selector.NumberSelectorConfig(min=100, max=100000, step=100)),
                     vol.Optional(
                         CONF_INCLUDE_DOMAINS,
                         default=self.config_entry.options.get(CONF_INCLUDE_DOMAINS, []),

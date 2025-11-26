@@ -53,6 +53,8 @@ from .const import (
     DEFAULT_TABLE_NAME_EVENTS,
     DEFAULT_DEBUG,
     DEFAULT_ENABLE_STATISTICS,
+    CONF_BUFFER_ON_FAILURE,
+    DEFAULT_BUFFER_ON_FAILURE,
 )
 from .writer import ScribeWriter
 
@@ -176,7 +178,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         record_events=record_events,
         batch_size=options.get(CONF_BATCH_SIZE, config.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE)),
         flush_interval=options.get(CONF_FLUSH_INTERVAL, config.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL)),
-        max_queue_size=max_queue_size,
+        max_queue_size=options.get(CONF_MAX_QUEUE_SIZE, config.get(CONF_MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE)),
+        buffer_on_failure=options.get(CONF_BUFFER_ON_FAILURE, config.get(CONF_BUFFER_ON_FAILURE, DEFAULT_BUFFER_ON_FAILURE)),
         table_name_states=table_name_states,
         table_name_events=table_name_events
     )

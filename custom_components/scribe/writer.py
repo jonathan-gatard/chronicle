@@ -31,7 +31,7 @@ class ScribeWriter(threading.Thread):
     FLUSH_INTERVAL seconds have passed.
     """
 
-    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, max_queue_size, table_name_states, table_name_events):
+    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, max_queue_size, buffer_on_failure, table_name_states, table_name_events):
         """Initialize the writer."""
         threading.Thread.__init__(self)
         self.hass = hass
@@ -43,6 +43,7 @@ class ScribeWriter(threading.Thread):
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self.max_queue_size = max_queue_size
+        self.buffer_on_failure = buffer_on_failure
         self.table_name_states = table_name_states
         self.table_name_events = table_name_events
         
@@ -216,7 +217,11 @@ class ScribeWriter(threading.Thread):
             if not self._engine:
                 # Re-queue batch if no connection
                 with self._lock:
-                    self._queue = batch + self._queue
+                    if self.buffer_on_failure:
+                        self._queue = batch + self._queue
+                    else:
+                        self._dropped_events += len(batch)
+                        _LOGGER.warning(f"Database not connected and buffering is disabled. Dropped {len(batch)} events.")
                 return
 
         start_time = time.time()
@@ -255,6 +260,12 @@ class ScribeWriter(threading.Thread):
             with self._lock:
                 self._connected = False
                 self._last_error = str(e)
+                
+                if not self.buffer_on_failure:
+                    self._dropped_events += len(batch)
+                    _LOGGER.warning(f"Database write failed and buffering is disabled. Dropped {len(batch)} events. Error: {e}")
+                    return
+
                 # Re-queue batch on failure
                 # Prepend to queue to maintain order (mostly)
                 # Check max size to avoid infinite growth if DB is down for a long time

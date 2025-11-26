@@ -16,6 +16,7 @@ def test_writer_enqueue_flush():
         batch_size=2,
         flush_interval=5,
         max_queue_size=10000,
+        buffer_on_failure=True,
         table_name_states="states",
         table_name_events="events"
     )
@@ -40,3 +41,33 @@ def test_writer_enqueue_flush():
     # Verify stats
     assert writer._states_written == 1
     assert writer._events_written == 1
+
+def test_writer_no_buffer_on_failure():
+    """Test that events are dropped when buffering is disabled."""
+    hass = MagicMock()
+    writer = ScribeWriter(
+        hass=hass,
+        db_url="postgresql://user:pass@host/db",
+        chunk_interval="7 days",
+        compress_after="60 days",
+        record_states=True,
+        record_events=True,
+        batch_size=1,
+        flush_interval=5,
+        max_queue_size=10000,
+        buffer_on_failure=False,
+        table_name_states="states",
+        table_name_events="events"
+    )
+
+    # Mock Engine to fail
+    writer._engine = None # Simulate no connection
+    
+    # Mock create_engine to fail
+    with patch("custom_components.scribe.writer.create_engine", side_effect=Exception("Connection failed")):
+        # Enqueue item
+        writer.enqueue({"type": "state", "data": 1})
+        
+        # Should be empty because it tried to flush (batch_size=1), failed, and dropped it
+        assert len(writer._queue) == 0
+        assert writer._dropped_events == 1
