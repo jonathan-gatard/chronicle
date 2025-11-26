@@ -27,6 +27,7 @@ from .const import (
     CONF_INCLUDE_ENTITIES,
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
+    CONF_EXCLUDE_ATTRIBUTES,
     CONF_RECORD_STATES,
     CONF_RECORD_EVENTS,
     CONF_BATCH_SIZE,
@@ -221,6 +222,10 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_EXCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_EXCLUDE_ENTITIES, []),
                     ): selector.EntitySelector(selector.EntitySelectorConfig(multiple=True)),
+                    vol.Optional(
+                        CONF_EXCLUDE_ATTRIBUTES,
+                        default=self.config_entry.options.get(CONF_EXCLUDE_ATTRIBUTES, []),
+                    ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
                 }
             ),
             errors=errors,

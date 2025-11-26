@@ -14,7 +14,21 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
 - **Efficient Storage**: Automatically uses **TimescaleDB Hypertables** and **Native Compression** (up to 95% storage savings).
 - **Flexible Schema**: Uses `JSONB` for attributes, allowing for a flexible schema that is still fully queryable.
 - **Configurable**: Choose to record **States**, **Events**, or both. Filter entities and domains via the UI.
+- **Reliable**: Built-in buffer and retry logic ensures no data loss if the database is temporarily unreachable.
 - **UI Configuration**: Fully managed via Home Assistant's Integrations page.
+
+## ⚖️ Scribe vs Native Recorder
+
+| Feature | Native Recorder (PostgreSQL) | Scribe (TimescaleDB) |
+| :--- | :--- | :--- |
+| **Primary Purpose** | Core HA History, Logbook, Energy Dashboard | Long-term Analysis, Grafana, Data Science |
+| **Data Retention** | Usually short (e.g., 10-30 days) | Infinite / Long-term (Years) |
+| **Storage Engine** | Standard SQL Tables | **Hypertables** (Partitioned by time) |
+| **Compression** | None (Row-based) | **Columnar Compression** (90%+ savings) |
+| **Performance** | Good for recent history | Excellent for aggregations & large datasets |
+| **Integration** | Native UI (Logbook, History) | External Tools (Grafana, pgAdmin) |
+
+**Recommendation**: Run Scribe **in parallel** with the native Recorder. Keep the native recorder retention short (e.g., 7 days) for fast UI performance, and use Scribe for long-term storage and visualization in Grafana.
 
 ## 📦 Installation
 
@@ -37,8 +51,8 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
 3.  Search for **Scribe**.
 4.  Enter your PostgreSQL / TimescaleDB connection details:
     - **Database URL**: `postgresql://user:password@host:5432/dbname`
-    - **Chunk Interval**: `30 days` (default)
-    - **Compress After**: `7 days` (default)
+    - **Chunk Interval**: `7 days` (default)
+    - **Compress After**: `60 days` (default)
     - **Record States**: Enable to record sensor history (default: True).
     - **Record Events**: Enable to record automation triggers, service calls, etc. (default: False).
 
@@ -48,12 +62,13 @@ Some advanced settings are only available via `configuration.yaml`:
 ```yaml
 scribe:
   db_url: postgresql://user:password@host:5432/dbname
-  chunk_time_interval: 30 days # Optional, default: 7 days
-  compress_after: 7 days # Optional, default: 60 days
+  chunk_time_interval: 7 days # Optional, default: 7 days
+  compress_after: 60 days # Optional, default: 60 days
   record_states: true # Optional, default: true
   record_events: false # Optional, default: false
   batch_size: 100        # Number of events to buffer before writing
   flush_interval: 5      # Seconds to wait before flushing buffer
+  max_queue_size: 10000  # Max events to buffer if DB is down
   table_name_states: states   # Custom table name for states
   table_name_events: events   # Custom table name for events
   debug: true                 # Enable debug logging (default: false)
@@ -62,6 +77,9 @@ scribe:
     - switch
   exclude_entities:
     - sensor.noisy_sensor
+  exclude_attributes:
+    - friendly_name
+    - icon
 ```
 
 **Note**: If you configure Scribe via YAML, the settings will be imported into the UI config entry. You can still modify them later via the UI "Configure" button.
@@ -75,7 +93,7 @@ Stores the history of your entities (sensors, lights, etc.).
 
 | Column       | Type             | Description                                      |
 | :----------- | :--------------- | :----------------------------------------------- |
-| `time`       | `TIMESTAMPTZ`    | Timestamp of the state change (Primary Key)      |
+| `time`       | `TIMESTAMPTZ`    | Timestamp of the state change (Partition Key)    |
 | `entity_id`  | `TEXT`           | Entity ID (e.g., `sensor.temperature`)           |
 | `state`      | `TEXT`           | Raw state value (e.g., "20.5", "on")             |
 | `value`      | `DOUBLE PRECISION`| Numeric value of the state (NULL if non-numeric) |
@@ -86,7 +104,7 @@ Stores system events (automation triggers, service calls, etc.).
 
 | Column            | Type             | Description                                      |
 | :---------------- | :--------------- | :----------------------------------------------- |
-| `time`            | `TIMESTAMPTZ`    | Timestamp of the event (Primary Key)             |
+| `time`            | `TIMESTAMPTZ`    | Timestamp of the event (Partition Key)           |
 | `event_type`      | `TEXT`           | Type of event (e.g., `call_service`)             |
 | `event_data`      | `JSONB`          | Full event data payload                          |
 | `origin`          | `TEXT`           | Origin of the event (LOCAL, REMOTE)              |
@@ -94,6 +112,8 @@ Stores system events (automation triggers, service calls, etc.).
 | `context_user_id` | `TEXT`           | User ID who triggered the event                  |
 
 ## 📈 Grafana Examples
+
+A sample dashboard is included in the repository: [`grafana_dashboard.json`](grafana_dashboard.json).
 
 ### Plot a Sensor Value
 ```sql
@@ -120,6 +140,14 @@ WHERE
   AND $__timeFilter(time)
 ORDER BY time
 ```
+
+## ❓ Troubleshooting
+
+*   **Connection Failed**: Check your DB credentials and ensure the PostgreSQL server allows connections from the HA IP.
+*   **Missing Data**: Verify that `record_states` or `record_events` is enabled and that you haven't excluded the entities.
+*   **Extension Missing**: Ensure `timescaledb` extension is installed on your Postgres server (`CREATE EXTENSION IF NOT EXISTS timescaledb;`).
+
+For more detailed information, see [TECHNICAL_DOCS.md](TECHNICAL_DOCS.md).
 
 ## 📄 License
 

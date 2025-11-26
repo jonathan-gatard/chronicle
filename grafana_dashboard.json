@@ -3,10 +3,7 @@
         "list": [
             {
                 "builtIn": 1,
-                "datasource": {
-                    "type": "grafana",
-                    "uid": "-- Grafana --"
-                },
+                "datasource": "-- Grafana --",
                 "enable": true,
                 "hide": true,
                 "iconColor": "rgba(0, 211, 255, 1)",
@@ -16,30 +13,24 @@
         ]
     },
     "editable": true,
-    "fiscalYearStartMonth": 0,
+    "gnetId": null,
     "graphTooltip": 0,
     "id": null,
     "links": [],
-    "liveNow": false,
     "panels": [
         {
-            "datasource": {
-                "type": "postgres",
-                "uid": "${DS_POSTGRES}"
-            },
+            "datasource": "PostgreSQL",
             "fieldConfig": {
                 "defaults": {
                     "color": {
                         "mode": "palette-classic"
                     },
                     "custom": {
-                        "axisCenteredZero": false,
-                        "axisColorMode": "text",
                         "axisLabel": "",
                         "axisPlacement": "auto",
                         "barAlignment": 0,
                         "drawStyle": "line",
-                        "fillOpacity": 0,
+                        "fillOpacity": 10,
                         "gradientMode": "none",
                         "hideFrom": {
                             "legend": false,
@@ -85,13 +76,12 @@
                 "x": 0,
                 "y": 0
             },
-            "id": 1,
+            "id": 2,
             "options": {
                 "legend": {
                     "calcs": [],
                     "displayMode": "list",
-                    "placement": "bottom",
-                    "showLegend": true
+                    "placement": "bottom"
                 },
                 "tooltip": {
                     "mode": "single",
@@ -100,42 +90,39 @@
             },
             "targets": [
                 {
-                    "datasource": {
-                        "type": "postgres",
-                        "uid": "${DS_POSTGRES}"
-                    },
-                    "editorMode": "code",
                     "format": "time_series",
+                    "group": [],
+                    "metricColumn": "entity_id",
                     "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  value,\n  entity_id\nFROM states\nWHERE\n  $__timeFilter(time)\n  AND entity_id IN ('sensor.processor_use')\nORDER BY 1",
                     "refId": "A",
-                    "sql": {
-                        "columns": [
+                    "select": [
+                        [
                             {
-                                "parameters": [],
-                                "type": "function"
+                                "params": [
+                                    "value"
+                                ],
+                                "type": "column"
                             }
-                        ],
-                        "groupBy": [
-                            {
-                                "property": {
-                                    "type": "string"
-                                },
-                                "type": "groupBy"
-                            }
-                        ],
-                        "limit": 50
-                    },
-                    "rawSql": "SELECT\n  time AS \"time\",\n  value,\n  entity_id as metric\nFROM states\nWHERE\n  $__timeFilter(time)\n  AND entity_id IN ('sensor.processor_use')\nORDER BY 1"
+                        ]
+                    ],
+                    "table": "states",
+                    "timeColumn": "time",
+                    "timeColumnType": "timestamp",
+                    "where": [
+                        {
+                            "name": "$__timeFilter",
+                            "params": [],
+                            "type": "macro"
+                        }
+                    ]
                 }
             ],
-            "title": "Example Sensor Data",
+            "title": "Sensor History",
             "type": "timeseries"
         },
         {
-            "datasource": {
-                "type": "postgres",
-                "uid": "${DS_POSTGRES}"
-            },
+            "datasource": "PostgreSQL",
             "fieldConfig": {
                 "defaults": {
                     "color": {
@@ -154,18 +141,22 @@
                                 "value": 80
                             }
                         ]
-                    }
+                    },
+                    "unit": "bytes"
                 },
                 "overrides": []
             },
             "gridPos": {
                 "h": 8,
-                "w": 12,
+                "w": 6,
                 "x": 12,
                 "y": 0
             },
-            "id": 2,
+            "id": 4,
             "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
                 "orientation": "auto",
                 "reduceOptions": {
                     "calcs": [
@@ -174,32 +165,45 @@
                     "fields": "",
                     "values": false
                 },
-                "showThresholdLabels": false,
-                "showthresholdMarkers": true
+                "textMode": "auto"
             },
             "targets": [
                 {
-                    "datasource": {
-                        "type": "postgres",
-                        "uid": "${DS_POSTGRES}"
-                    },
-                    "editorMode": "code",
                     "format": "table",
+                    "group": [],
+                    "metricColumn": "none",
                     "rawQuery": true,
+                    "rawSql": "SELECT hypertable_size('states') as size",
                     "refId": "A",
-                    "rawSql": "SELECT count(*) as count FROM states"
+                    "select": [
+                        [
+                            {
+                                "params": [
+                                    "value"
+                                ],
+                                "type": "column"
+                            }
+                        ]
+                    ],
+                    "table": "states",
+                    "timeColumn": "time",
+                    "timeColumnType": "timestamp",
+                    "where": [
+                        {
+                            "name": "$__timeFilter",
+                            "params": [],
+                            "type": "macro"
+                        }
+                    ]
                 }
             ],
-            "title": "Total States Recorded",
+            "title": "States Table Size",
             "type": "stat"
         }
     ],
-    "refresh": "",
-    "schemaVersion": 38,
+    "schemaVersion": 30,
     "style": "dark",
-    "tags": [
-        "scribe"
-    ],
+    "tags": [],
     "templating": {
         "list": []
     },
@@ -211,6 +215,5 @@
     "timezone": "",
     "title": "Scribe Dashboard",
     "uid": "scribe-dashboard",
-    "version": 1,
-    "weekStart": ""
+    "version": 1
 }

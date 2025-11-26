@@ -31,7 +31,7 @@ class ScribeWriter(threading.Thread):
     FLUSH_INTERVAL seconds have passed.
     """
 
-    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, table_name_states, table_name_events):
+    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, max_queue_size, table_name_states, table_name_events):
         """Initialize the writer."""
         threading.Thread.__init__(self)
         self.hass = hass
@@ -42,6 +42,7 @@ class ScribeWriter(threading.Thread):
         self.record_events = record_events
         self.batch_size = batch_size
         self.flush_interval = flush_interval
+        self.max_queue_size = max_queue_size
         self.table_name_states = table_name_states
         self.table_name_events = table_name_events
         
@@ -50,6 +51,7 @@ class ScribeWriter(threading.Thread):
         self._last_write_duration = 0.0
         self._connected = False
         self._last_error = None
+        self._dropped_events = 0
         
         # Thread safety
         self._queue = []
@@ -80,6 +82,12 @@ class ScribeWriter(threading.Thread):
         If the queue size exceeds the batch size, a flush is triggered immediately.
         """
         with self._lock:
+            if len(self._queue) >= self.max_queue_size:
+                self._dropped_events += 1
+                if self._dropped_events % 100 == 1:
+                    _LOGGER.warning(f"Queue full ({len(self._queue)}), dropping event. Total dropped: {self._dropped_events}")
+                return
+            
             self._queue.append(data)
             
         if len(self._queue) >= self.batch_size:
@@ -205,6 +213,9 @@ class ScribeWriter(threading.Thread):
         if not self._engine:
             self._connect()
             if not self._engine:
+                # Re-queue batch if no connection
+                with self._lock:
+                    self._queue = batch + self._queue
                 return
 
         start_time = time.time()
@@ -242,6 +253,15 @@ class ScribeWriter(threading.Thread):
             with self._lock:
                 self._connected = False
                 self._last_error = str(e)
+                # Re-queue batch on failure
+                # Prepend to queue to maintain order (mostly)
+                # Check max size to avoid infinite growth if DB is down for a long time
+                remaining_space = self.max_queue_size - len(self._queue)
+                if remaining_space > 0:
+                    self._queue = batch[:remaining_space] + self._queue
+                    if len(batch) > remaining_space:
+                        self._dropped_events += (len(batch) - remaining_space)
+                        _LOGGER.warning(f"Buffer full during retry, dropped {len(batch) - remaining_space} events")
 
     def get_db_stats(self):
         """Fetch database statistics.

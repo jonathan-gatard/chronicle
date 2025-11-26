@@ -3,6 +3,23 @@
 ## Overview
 Scribe is a custom Home Assistant integration designed to offload historical data recording to a high-performance **TimescaleDB** (PostgreSQL) database. It runs alongside the default `recorder` but offers superior performance for long-term data storage and analysis thanks to TimescaleDB's hypertables and compression.
 
+## Scribe vs Native Recorder
+
+| Feature | Native Recorder (PostgreSQL) | Scribe (TimescaleDB) |
+| :--- | :--- | :--- |
+| **Primary Purpose** | Core HA History, Logbook, Energy Dashboard | Long-term Analysis, Grafana, Data Science |
+| **Data Retention** | Usually short (e.g., 10-30 days) | Infinite / Long-term (Years) |
+| **Storage Engine** | Standard SQL Tables | **Hypertables** (Partitioned by time) |
+| **Compression** | None (Row-based) | **Columnar Compression** (90%+ savings) |
+| **Performance** | Good for recent history | Excellent for aggregations & large datasets |
+| **Integration** | Native UI (Logbook, History) | External Tools (Grafana, pgAdmin) |
+| **Configuration** | `recorder:` in YAML | UI Config Flow + Advanced YAML |
+
+**Recommendation**: Run Scribe **in parallel** with the native Recorder.
+*   Keep Native Recorder retention short (e.g., 7-14 days) for fast UI performance.
+*   Use Scribe for long-term storage (e.g., 1 year+) and visualization in Grafana.
+*   Scribe does **not** populate the Home Assistant History, Logbook, or Energy Dashboard.
+
 ## Architecture
 
 ### Core Components
@@ -17,6 +34,7 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
     *   **Queue System**: Events are added to a thread-safe list (`self._queue`) protected by a `threading.Lock`.
     *   **Batch Processing**: Data is flushed to the database in batches (default: 100 items) or periodically (default: 5 seconds).
     *   **Database Management**: Automatically handles table creation, hypertable conversion, and compression policy application on startup.
+    *   **Retry Logic**: If the database is unreachable, the batch is put back into the queue (prepended) to prevent data loss. A `max_queue_size` (default: 10,000) prevents memory exhaustion.
 3.  **`config_flow.py`**: Handles UI configuration.
     *   Supports standard user flow and import from YAML.
     *   Validates database connections.
@@ -38,8 +56,9 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
     *   `_flush()` acquires the lock.
     *   Swaps the queue with an empty list (atomic-like operation).
     *   Opens a SQLAlchemy connection.
-    *   Inserts data using `COPY` (via `psycopg2.extras.execute_values`) or batched `INSERT` for maximum speed.
+    *   Inserts data using batched `INSERT` for maximum speed.
     *   Commits the transaction.
+    *   **On Failure**: The batch is re-queued, and the error is logged.
 
 ## Database Schema
 
@@ -52,6 +71,8 @@ Stores numeric and string state data.
 *   `state` (TEXT): The raw state string.
 *   `value` (DOUBLE PRECISION): Parsed numeric value (for graphing).
 *   `attributes` (JSONB): Full state attributes.
+
+**Primary Key Note**: TimescaleDB hypertables are partitioned by time. While we create an index on `(entity_id, time DESC)`, we do not enforce a strict PRIMARY KEY constraint on `time` alone because multiple events can happen at the same microsecond.
 
 **Compression**:
 *   Segment by: `entity_id`
@@ -69,6 +90,56 @@ Stores generic Home Assistant events.
 *   Segment by: `event_type`
 *   Order by: `time DESC`
 *   Policy: Default 60 days.
+
+## Migration from Recorder
+
+Scribe does not automatically import data from the native Recorder database. However, you can migrate data manually using SQL if both databases are accessible.
+
+**Example Migration Query (PostgreSQL to Scribe)**:
+```sql
+INSERT INTO scribe_states (time, entity_id, state, value, attributes)
+SELECT
+    to_timestamp(last_updated_ts),
+    entity_id,
+    state,
+    CASE WHEN state ~ '^[0-9\.]+$' THEN state::DOUBLE PRECISION ELSE NULL END,
+    attributes::jsonb
+FROM states
+WHERE to_timestamp(last_updated_ts) < NOW() - INTERVAL '1 hour';
+```
+*Note: This is a simplified example. You would need to join with `states_meta` in the native schema to get `entity_id` strings.*
+
+## Error Handling & Reliability
+
+*   **Connection Failures**: If TimescaleDB is down, Scribe will:
+    1.  Log an error.
+    2.  Mark the `binary_sensor.scribe_database_connection` as `off`.
+    3.  **Buffer Data**: Events are kept in memory in the queue.
+    4.  **Retry**: The writer will attempt to reconnect and flush the buffer on the next interval.
+    5.  **Safety Valve**: If the queue exceeds `max_queue_size` (10,000), new events are dropped to prevent Home Assistant from crashing due to OOM (Out of Memory).
+
+## Troubleshooting
+
+### Common Issues
+
+1.  **"Database connection failed"**:
+    *   Check `db_host`, `db_port`, `db_user`, and `db_password`.
+    *   Ensure the PostgreSQL server allows connections from the Home Assistant IP (`pg_hba.conf`).
+    *   Verify the database exists.
+
+2.  **"Extension timescaledb does not exist"**:
+    *   Ensure TimescaleDB is installed on your PostgreSQL server.
+    *   Run `CREATE EXTENSION IF NOT EXISTS timescaledb;` in the database.
+
+3.  **High Memory Usage**:
+    *   If the DB is down for a long time, the buffer will grow.
+    *   Adjust `max_queue_size` in YAML if needed.
+    *   Check `sensor.scribe_buffer_size`.
+
+4.  **Missing Data in Grafana**:
+    *   Check `sensor.scribe_events_written` to see if data is being written.
+    *   Verify your Grafana query uses the correct table name (`states` or custom name).
+    *   Check if data is compressed (older data might need `decompress_chunk` for updates, but reads are transparent).
 
 ## Configuration
 
