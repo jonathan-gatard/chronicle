@@ -1,4 +1,10 @@
-"""Config flow for Scribe integration."""
+"""Config flow for Scribe integration.
+
+This module handles the UI configuration for Scribe. It supports:
+1. Initial setup via the Integrations page.
+2. Import from configuration.yaml.
+3. Options flow for re-configuring settings after setup.
+"""
 import logging
 import voluptuous as vol
 from sqlalchemy import create_engine, text
@@ -41,19 +47,28 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Scribe."""
+    """Handle a config flow for Scribe.
+    
+    The config flow is responsible for creating the ConfigEntry.
+    It validates the database connection and can even create the database if it doesn't exist.
+    """
 
     VERSION = 1
 
     async def async_step_user(self, user_input=None) -> FlowResult:
-        """Handle the initial step."""
+        """Handle the initial step.
+        
+        Displays the form to the user and processes the input.
+        """
         errors = {}
 
         if user_input is not None:
+            # Validation: Must record at least states or events
             if not user_input.get(CONF_RECORD_STATES) and not user_input.get(CONF_RECORD_EVENTS):
                 errors["base"] = "must_record_something"
             else:
                 try:
+                    # Validate connection in executor to avoid blocking loop
                     await self.hass.async_add_executor_job(
                         self.validate_input, self.hass, user_input
                     )
@@ -86,14 +101,19 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_import(self, user_input=None) -> FlowResult:
-        """Handle import from YAML."""
+        """Handle import from YAML.
+        
+        Triggered by async_setup in __init__.py if configuration.yaml contains 'scribe:'.
+        """
         return await self.async_step_user(user_input)
 
     @staticmethod
     def validate_input(hass: HomeAssistant, data: dict) -> dict:
         """Validate the user input allows us to connect.
-
-        Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
+        
+        This method attempts to connect to the target database.
+        If the database does not exist, it attempts to connect to 'postgres'
+        and create the target database (requires sufficient privileges).
         """
         db_url = f"postgresql://{data[CONF_DB_USER]}:{data[CONF_DB_PASSWORD]}@{data[CONF_DB_HOST]}:{data[CONF_DB_PORT]}/{data[CONF_DB_NAME]}"
         
@@ -130,7 +150,11 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return ScribeOptionsFlowHandler(config_entry)
 
 class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for Scribe."""
+    """Handle options flow for Scribe.
+    
+    Allows users to change settings without restarting Home Assistant.
+    Supports filtering (include/exclude) and performance tuning (batch size, flush interval).
+    """
 
     def __init__(self, config_entry):
         """Initialize options flow."""

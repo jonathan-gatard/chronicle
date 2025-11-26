@@ -1,4 +1,9 @@
-"""Sensor platform for Scribe."""
+"""Sensor platform for Scribe.
+
+This module exposes internal metrics of the Scribe integration as Home Assistant sensors.
+These sensors allow users to monitor the health and performance of the database writer,
+including queue size, write latency, and database storage usage.
+"""
 from __future__ import annotations
 
 from homeassistant.components.sensor import (
@@ -21,7 +26,11 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Scribe sensors."""
+    """Set up Scribe sensors.
+    
+    Retrieves the writer instance and coordinator from hass.data and creates
+    the sensor entities.
+    """
     writer = hass.data[DOMAIN][entry.entry_id]["writer"]
     coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
     
@@ -32,6 +41,7 @@ async def async_setup_entry(
     ]
     
     # Add Statistics Sensors if enabled
+    # These sensors rely on the DataUpdateCoordinator to fetch data periodically
     if entry.options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS) and coordinator:
         entities.extend([
             ScribeDatabaseSizeSensor(coordinator, entry, "states_size_bytes", "States Table Size"),
@@ -42,7 +52,10 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 class ScribeSensor(SensorEntity):
-    """Base class for Scribe sensors."""
+    """Base class for Scribe sensors.
+    
+    Directly polls the writer instance for real-time metrics.
+    """
 
     _attr_has_entity_name = True
 
@@ -63,7 +76,11 @@ class ScribeSensor(SensorEntity):
         return self._writer.running
 
 class ScribeCoordinatorSensor(CoordinatorEntity, SensorEntity):
-    """Base class for Scribe coordinator sensors."""
+    """Base class for Scribe coordinator sensors.
+    
+    Uses the DataUpdateCoordinator to fetch data, suitable for expensive queries
+    like database size and compression stats.
+    """
     
     _attr_has_entity_name = True
 
@@ -120,10 +137,7 @@ class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
         if not uncompressed or not compressed:
             return None
             
-        # Ratio: How much space saved? Or compression ratio?
-        # Typically ratio = uncompressed / compressed (e.g. 10x)
-        # Or percentage saved = (1 - compressed/uncompressed) * 100
-        
+        # Calculate percentage saved
         return round((1 - (compressed / uncompressed)) * 100, 1)
 
 
@@ -158,7 +172,10 @@ class ScribeBufferSizeSensor(ScribeSensor):
 
     @property
     def native_value(self):
-        """Return the state of the sensor."""
+        """Return the state of the sensor.
+        
+        Acquires the lock to ensure thread-safe access to the queue length.
+        """
         with self._writer._lock:
             return len(self._writer._queue)
 

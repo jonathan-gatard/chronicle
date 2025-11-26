@@ -1,4 +1,9 @@
-"""Database writer for Scribe."""
+"""Database writer for Scribe.
+
+This module handles the asynchronous writing of data to the TimescaleDB database.
+It implements a threaded writer that buffers events and writes them in batches
+to minimize database connection overhead and blocking.
+"""
 import logging
 import threading
 import time
@@ -19,7 +24,12 @@ BATCH_SIZE = 100
 FLUSH_INTERVAL = 5
 
 class ScribeWriter(threading.Thread):
-    """Handle database connections and writing."""
+    """Handle database connections and writing.
+    
+    This class runs as a daemon thread. It maintains a queue of events to be written.
+    Data is flushed to the database when the queue reaches BATCH_SIZE or when
+    FLUSH_INTERVAL seconds have passed.
+    """
 
     def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, table_name_states, table_name_events):
         """Initialize the writer."""
@@ -35,24 +45,28 @@ class ScribeWriter(threading.Thread):
         self.table_name_states = table_name_states
         self.table_name_events = table_name_events
         
-        # Stats
+        # Stats for sensors
         self._events_written = 0
         self._last_write_duration = 0.0
         self._connected = False
         self._last_error = None
         
+        # Thread safety
         self._queue = []
-        self._lock = threading.Lock()
+        self._lock = threading.Lock() # Protects access to self._queue
         self._stop_event = threading.Event()
         self._thread = None
         
         self.running = True
-        self.daemon = True
+        self.daemon = True # Thread dies when main process dies
         
         self._engine = None
 
     def run(self):
-        """Thread main loop."""
+        """Thread main loop.
+        
+        Continuously checks if it's time to flush the queue based on the timer.
+        """
         self._connect()
         
         while self.running:
@@ -60,7 +74,11 @@ class ScribeWriter(threading.Thread):
             self._flush()
 
     def enqueue(self, data):
-        """Add data to the queue."""
+        """Add data to the queue.
+        
+        This method is called from the main event loop, so it must be fast and thread-safe.
+        If the queue size exceeds the batch size, a flush is triggered immediately.
+        """
         with self._lock:
             self._queue.append(data)
             
@@ -70,13 +88,18 @@ class ScribeWriter(threading.Thread):
     def _connect(self):
         """Connect to the database."""
         try:
+            # Create SQLAlchemy engine with connection pooling
             self._engine = create_engine(self.db_url, pool_size=10, max_overflow=20)
             _LOGGER.info("Connected to TimescaleDB")
         except Exception as e:
             _LOGGER.error(f"Error connecting to database: {e}")
 
     def init_db(self):
-        """Initialize database tables, hypertables, and compression."""
+        """Initialize database tables, hypertables, and compression.
+        
+        This is called once during startup. It creates the necessary tables if they
+        don't exist and configures TimescaleDB specific features (hypertables, compression).
+        """
         self._connect()
         if not self._engine:
             return
@@ -85,6 +108,7 @@ class ScribeWriter(threading.Thread):
             # States Table
             if self.record_states:
                 try:
+                    # Create standard table
                     conn.execute(text(f"""
                         CREATE TABLE IF NOT EXISTS {self.table_name_states} (
                             time TIMESTAMPTZ NOT NULL,
@@ -94,10 +118,12 @@ class ScribeWriter(threading.Thread):
                             attributes JSONB
                         );
                     """))
+                    # Create index for fast querying by entity and time
                     conn.execute(text(f"""
                         CREATE INDEX IF NOT EXISTS {self.table_name_states}_entity_time_idx 
                         ON {self.table_name_states} (entity_id, time DESC);
                     """))
+                    # Convert to Hypertable
                     self._init_hypertable(conn, self.table_name_states, "entity_id")
                 except Exception as e:
                     _LOGGER.error(f"Error creating states table: {e}")
@@ -127,7 +153,12 @@ class ScribeWriter(threading.Thread):
             conn.commit()
 
     def _init_hypertable(self, conn, table_name, segment_by):
-        """Initialize hypertable and compression for a table."""
+        """Initialize hypertable and compression for a table.
+        
+        TimescaleDB features:
+        - Hypertable: Partitions data by time (chunk_interval).
+        - Compression: Compresses old data to save space (compress_after).
+        """
         try:
             # Convert to Hypertable
             try:
@@ -159,7 +190,12 @@ class ScribeWriter(threading.Thread):
             _LOGGER.error(f"Error initializing {table_name}: {e}")
 
     def _flush(self):
-        """Flush the queue to the database."""
+        """Flush the queue to the database.
+        
+        This method takes all items currently in the queue and writes them to the DB
+        in a single transaction.
+        """
+        # Atomically swap the queue with an empty one
         with self._lock:
             if not self._queue:
                 return
@@ -173,12 +209,12 @@ class ScribeWriter(threading.Thread):
 
         start_time = time.time()
         try:
-            # Separate batches
+            # Separate batches by type
             states_data = [x for x in batch if x['type'] == 'state']
             events_data = [x for x in batch if x['type'] == 'event']
 
             with self._engine.connect() as conn:
-                with conn.begin():
+                with conn.begin(): # Start transaction
                     if states_data:
                         conn.execute(
                             text(f"INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes) VALUES (:time, :entity_id, :state, :value, :attributes)"),
@@ -191,6 +227,8 @@ class ScribeWriter(threading.Thread):
                         )
             
             duration = time.time() - start_time
+            
+            # Update stats
             with self._lock:
                 self._events_written += len(batch)
                 self._last_write_duration = duration
@@ -206,7 +244,11 @@ class ScribeWriter(threading.Thread):
                 self._last_error = str(e)
 
     def get_db_stats(self):
-        """Fetch database statistics."""
+        """Fetch database statistics.
+        
+        Queries TimescaleDB specific functions to get size and compression stats.
+        Used by the coordinator to update sensors.
+        """
         stats = {}
         if not self._engine:
             return stats
@@ -242,8 +284,12 @@ class ScribeWriter(threading.Thread):
             _LOGGER.error(f"Error fetching stats: {e}")
             
         return stats
+        
     def shutdown(self, event):
-        """Shutdown the handler."""
+        """Shutdown the handler.
+        
+        Stops the thread and flushes any remaining data.
+        """
         self.running = False
         self._flush()
         if self._engine:

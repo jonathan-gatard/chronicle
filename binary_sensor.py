@@ -1,4 +1,9 @@
-"""Binary sensor platform for Scribe."""
+"""Binary sensor platform for Scribe.
+
+This module provides a binary sensor to indicate the connectivity status of the
+database writer. It helps users quickly identify if Scribe is successfully
+connected to the TimescaleDB instance.
+"""
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import (
@@ -27,7 +32,11 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 class ScribeConnectionBinarySensor(BinarySensorEntity):
-    """Binary sensor for DB connection status."""
+    """Binary sensor for DB connection status.
+    
+    Reflects the `_connected` state of the writer.
+    Also exposes the last error message as an attribute for debugging.
+    """
 
     _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY

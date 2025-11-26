@@ -1,4 +1,9 @@
-"""Scribe: A custom component to store Home Assistant history in TimescaleDB."""
+"""Scribe: A custom component to store Home Assistant history in TimescaleDB.
+
+This component intercepts all state changes and events in Home Assistant and asynchronously
+writes them to a TimescaleDB (PostgreSQL) database. It uses a dedicated writer thread
+to ensure that database operations do not block the main Home Assistant event loop.
+"""
 import logging
 import json
 import voluptuous as vol
@@ -52,6 +57,8 @@ _LOGGER = logging.getLogger(__name__)
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import discovery
 
+# Configuration Schema for YAML configuration
+# This allows users to configure Scribe via configuration.yaml instead of the UI.
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
@@ -77,7 +84,11 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Scribe component from YAML."""
+    """Set up the Scribe component from YAML.
+    
+    This function is called when Home Assistant starts and finds a 'scribe:' entry in configuration.yaml.
+    It triggers the import flow to create a config entry if one doesn't exist.
+    """
     hass.data.setdefault(DOMAIN, {})
     
     if DOMAIN in config:
@@ -91,24 +102,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Scribe from a config entry."""
+    """Set up Scribe from a config entry.
+    
+    This is the main setup function called when the integration is loaded.
+    It initializes the writer, connects to the database, and sets up event listeners.
+    """
     config = entry.data
     options = entry.options
 
     # Advanced Config (YAML Only)
+    # Some settings are only available via YAML to keep the UI simple.
     yaml_config = hass.data[DOMAIN].get("yaml_config", {})
     chunk_interval = yaml_config.get(CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL)
     compress_after = yaml_config.get(CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER)
     
     # Get DB Config
+    # Supports both legacy single URL and new individual fields
     if CONF_DB_URL in config:
         # Legacy or manual YAML config
         db_url = config[CONF_DB_URL]
     else:
-        # Constructed URL
+        # Constructed URL from individual fields
         db_url = f"postgresql://{config[CONF_DB_USER]}:{config[CONF_DB_PASSWORD]}@{config[CONF_DB_HOST]}:{config[CONF_DB_PORT]}/{config[CONF_DB_NAME]}"
 
-    # YAML Only
+    # YAML Only Settings
     table_name_states = yaml_config.get(CONF_TABLE_NAME_STATES, DEFAULT_TABLE_NAME_STATES)
     table_name_events = yaml_config.get(CONF_TABLE_NAME_EVENTS, DEFAULT_TABLE_NAME_EVENTS)
     debug_mode = yaml_config.get(CONF_DEBUG, DEFAULT_DEBUG)
@@ -118,6 +135,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("Debug mode enabled")
 
     # Entity Filter
+    # Sets up the include/exclude logic for domains and entities
     include_domains = options.get(CONF_INCLUDE_DOMAINS, [])
     include_entities = options.get(CONF_INCLUDE_ENTITIES, [])
     exclude_domains = options.get(CONF_EXCLUDE_DOMAINS, [])
@@ -131,10 +149,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Determine record_states and record_events for handle_event
+    # Prioritizes Options Flow > Config Entry > Default
     record_states = options.get(CONF_RECORD_STATES, config.get(CONF_RECORD_STATES, DEFAULT_RECORD_STATES))
     record_events = options.get(CONF_RECORD_EVENTS, config.get(CONF_RECORD_EVENTS, DEFAULT_RECORD_EVENTS))
 
     # Initialize Writer
+    # The ScribeWriter runs in a separate thread to handle DB I/O
     writer = ScribeWriter(
         hass=hass,
         db_url=db_url,
@@ -147,11 +167,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         table_name_states=table_name_states,
         table_name_events=table_name_events
     )
+    
+    # Initialize database tables in the executor to avoid blocking the loop
     await hass.async_add_executor_job(writer.init_db)
     
-    # Start writer
+    # Start the writer thread
     writer.start()
     
+    # Setup Data Update Coordinator for statistics
     from .coordinator import ScribeDataUpdateCoordinator
     
     coordinator = None
@@ -165,15 +188,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator
     }
 
-    # Forward setup to platforms
+    # Forward setup to platforms (Sensor, Binary Sensor)
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "binary_sensor"])
 
-    # Listener
+    # Event Listener
     async def handle_event(event: Event):
-        """Handle incoming events."""
+        """Handle incoming Home Assistant events.
+        
+        This function is called for EVERY event in Home Assistant.
+        It filters the event and enqueues it for writing if it matches criteria.
+        """
         event_type = event.event_type
         
-        # Handle States
+        # Handle State Changes
         if event_type == EVENT_STATE_CHANGED:
             if not record_states:
                 return
@@ -184,6 +211,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if new_state is None:
                 return
 
+            # Apply Include/Exclude Filter
             if not entity_filter(entity_id):
                 return
 
@@ -203,7 +231,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             writer.enqueue(data)
             return
 
-        # Handle Other Events
+        # Handle Generic Events
         if record_events:
             data = {
                 "type": "event",
@@ -217,37 +245,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             }
             writer.enqueue(data)
 
-    # Listen to all events
+    # Register the event listener
+    # Listening to None means we listen to ALL events
     entry.async_on_unload(
-        hass.bus.async_listen(None, handle_event) # None means all events
+        hass.bus.async_listen(None, handle_event) 
     )
     
+    # Register shutdown handler
     entry.async_on_unload(
         hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, writer.shutdown)
     )
     
-    # Services
+    # Register Services
     async def handle_flush(call):
-        """Handle flush service."""
+        """Handle flush service call.
+        
+        Allows users to manually trigger a database flush via automation or UI.
+        """
         await hass.async_add_executor_job(writer._flush)
         
     hass.services.async_register(DOMAIN, "flush", handle_flush)
 
-    # Reload entry when options change
+    # Reload entry when options change (e.g. via Options Flow)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry."""
+    """Reload config entry.
+    
+    Called when options are updated. Unloads and re-loads the integration to apply changes.
+    """
     await async_unload_entry(hass, entry)
     await async_setup_entry(hass, entry)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
+    """Unload a config entry.
+    
+    Called when the integration is removed or reloaded.
+    Stops the writer thread and unloads platforms.
+    """
     unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor", "binary_sensor"])
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id)
         writer = data["writer"]
+        # Ensure writer flushes remaining data before stopping
         await hass.async_add_executor_job(writer.shutdown, None)
     return unload_ok
