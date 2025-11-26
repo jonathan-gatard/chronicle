@@ -80,6 +80,8 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_TABLE_NAME_STATES, default=DEFAULT_TABLE_NAME_STATES): cv.string,
                 vol.Optional(CONF_TABLE_NAME_EVENTS, default=DEFAULT_TABLE_NAME_EVENTS): cv.string,
                 vol.Optional(CONF_DEBUG, default=DEFAULT_DEBUG): cv.boolean,
+                vol.Optional(CONF_BUFFER_ON_FAILURE, default=DEFAULT_BUFFER_ON_FAILURE): cv.boolean,
+                vol.Optional(CONF_ENABLE_STATISTICS, default=DEFAULT_ENABLE_STATISTICS): cv.boolean,
                 vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
                 vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): vol.All(cv.ensure_list, [cv.entity_id]),
                 vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
@@ -251,6 +253,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "value": state_val,
                 "attributes": json.dumps(attributes, default=str),
             }
+            _LOGGER.debug(f"Scribe: Enqueueing state change for {entity_id}")
             writer.enqueue(data)
             return
 

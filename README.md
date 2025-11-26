@@ -62,26 +62,44 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
 Some advanced settings are only available via `configuration.yaml`:
 
 scribe:
+  # Database Connection
   db_url: postgresql://scribe:password@host:5432/scribe
-  chunk_time_interval: 7 days # Optional, default: 7 days
-  compress_after: 60 days # Optional, default: 60 days
-  record_states: true # Optional, default: true
-  record_events: false # Optional, default: false
-  batch_size: 100        # Number of events to buffer before writing
-  flush_interval: 5      # Seconds to wait before flushing buffer
-  max_queue_size: 10000  # Max events to buffer if DB is down
-  buffer_on_failure: false # Buffer events if DB is down (default: false)
-  table_name_states: states   # Custom table name for states
-  table_name_events: events   # Custom table name for events
-  debug: true                 # Enable debug logging (default: false)
+
+  # Data Retention & Compression
+  chunk_time_interval: 7 days  # Time range for each chunk (default: 7 days)
+  compress_after: 60 days      # Compress chunks older than this (default: 60 days)
+
+  # Recording Options
+  record_states: true          # Record sensor history (default: true)
+  record_events: false         # Record automation triggers, etc. (default: false)
+  enable_statistics: false     # Enable internal statistics sensors (default: false)
+
+  # Performance & Reliability
+  batch_size: 100              # Number of events to buffer before writing (default: 100)
+  flush_interval: 5            # Seconds to wait before flushing buffer (default: 5)
+  max_queue_size: 10000        # Max events to buffer if DB is down (default: 10000)
+  buffer_on_failure: false     # Buffer events if DB is down (default: false)
+  debug: false                 # Enable debug logging (default: false)
+
+  # Custom Table Names
+  table_name_states: states    # Custom table name for states (default: states)
+  table_name_events: events    # Custom table name for events (default: events)
+
+  # Filtering (Include/Exclude)
+  # Logic: If include is set, only included items are recorded. Exclude takes precedence over include.
   include_domains:
     - sensor
     - switch
+  include_entities:
+    - sensor.important_sensor
+  exclude_domains:
+    - media_player
   exclude_entities:
     - sensor.noisy_sensor
   exclude_attributes:
     - friendly_name
     - icon
+    - entity_picture
 ```
 
 ### Database Management Scripts
