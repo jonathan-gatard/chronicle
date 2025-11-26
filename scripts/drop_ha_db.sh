@@ -15,6 +15,11 @@ then
 fi
 
 echo "Dropping database 'homeassistant'..."
+
+# Kill active connections
+echo "Terminating active connections..."
+psql -h "$PGHOST" -U "$PGUSER" -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'homeassistant' AND pid <> pg_backend_pid();" > /dev/null 2>&1
+
 dropdb -h "$PGHOST" -U "$PGUSER" --if-exists homeassistant
 
 if [ $? -eq 0 ]; then

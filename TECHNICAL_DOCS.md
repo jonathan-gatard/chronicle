@@ -178,7 +178,7 @@ Located in `.github/workflows/tests.yaml`.
 
 ## Deployment
 
-### `deploy.sh`
+### `scripts/deploy.sh`
 A helper script for local development.
 1.  **Sync**: Copies `custom_components/scribe` to the Home Assistant `custom_components` directory.
 2.  **Clean**: Removes unnecessary dev files (tests, cache) from the target.
