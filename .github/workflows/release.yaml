@@ -1,13 +1,16 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   release:
-    name: Prepare Release
+    name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -17,12 +20,9 @@ jobs:
           cd custom_components
           zip -r scribe.zip scribe
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./custom_components/scribe.zip
-          asset_name: scribe.zip
-          asset_content_type: application/zip
+          files: custom_components/scribe.zip
+          generate_release_notes: true
+
