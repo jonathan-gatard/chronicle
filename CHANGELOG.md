@@ -8,13 +8,16 @@ All notable changes to this project will be documented in this file.
 - **Retry Logic**: Implemented a robust retry mechanism for database writes. If the database is unreachable, events are buffered in memory (up to `max_queue_size`) and retried later.
 - **Attribute Exclusion**: Added `exclude_attributes` configuration option (YAML and UI) to filter out specific attributes from being recorded.
 - **Query Service**: Added `scribe.query` service to execute read-only SQL queries from Home Assistant.
-- **Grafana Dashboard**: Included a sample `grafana_dashboard.json` in the repository.
 - **Documentation**: Added comprehensive `TECHNICAL_DOCS.md` and updated `README.md` with "Scribe vs Recorder" comparison and troubleshooting guide.
 - **Issue Templates**: Added GitHub issue templates for bug reports and feature requests.
 
 ### Changed
+- **Scripts**: Generalized `deploy.sh` and `drop_db.sh` for public use (removed hardcoded paths).
 - **Defaults**: Harmonized default values between UI and YAML configuration.
 - **Logging**: Improved logging for connection errors and buffer status.
+
+### Fixed
+- **Sensors**: Resolved `AttributeError` in sensor initialization.
 
 ## [1.10.0] - 2025-11-25
 
