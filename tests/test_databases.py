@@ -12,8 +12,11 @@ PG_VERSIONS = ["latest-pg15", "latest-pg16", "latest-pg17", "latest-pg18"]
 
 @pytest.mark.enable_socket
 class TestDatabaseVersions:
-    @pytest.fixture(scope="module")
+    @pytest.fixture(scope="class")
     def docker_client(self):
+        """Docker client with socket enabled."""
+        # Ensure socket is enabled for this fixture execution
+        return docker.from_env()
         return docker.from_env()
 
     @pytest.fixture(scope="module")
