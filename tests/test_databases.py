@@ -1,7 +1,7 @@
 import pytest
 import docker
 import time
-import os
+
 from sqlalchemy import create_engine, text
 from custom_components.scribe.writer import ScribeWriter
 from unittest.mock import MagicMock
@@ -105,13 +105,25 @@ class TestDatabaseVersions:
         
         # Verify tables created
         async with writer._engine.connect() as conn:
-            # Check for hypertable
+            # Check for hypertable states (covers create_hypertable)
             result = await conn.execute(text(
                 "SELECT * FROM timescaledb_information.hypertables WHERE hypertable_name = 'states'"
             ))
             assert result.rowcount > 0 or len(result.fetchall()) > 0
 
-            # Check for compression policy
+            # Check for hypertable events (covers create_hypertable)
+            result = await conn.execute(text(
+                "SELECT * FROM timescaledb_information.hypertables WHERE hypertable_name = 'events'"
+            ))
+            assert result.rowcount > 0 or len(result.fetchall()) > 0
+
+            # Check for index on events (covers CREATE INDEX)
+            result = await conn.execute(text(
+                "SELECT * FROM pg_indexes WHERE tablename = 'events' AND indexname = 'events_type_time_idx'"
+            ))
+            assert result.rowcount > 0 or len(result.fetchall()) > 0
+
+            # Check for compression policy (covers add_compression_policy and ALTER TABLE SET compress)
             # Note: The view name might vary slightly by version, but jobs view is standard
             result = await conn.execute(text(
                 "SELECT * FROM timescaledb_information.jobs WHERE proc_name = 'policy_compression'"
