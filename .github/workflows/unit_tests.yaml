@@ -13,7 +13,7 @@ jobs:
       matrix:
         ha-version: ["stable", "beta", "dev"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
       - name: Run Unit Tests in Dev Container
         uses: devcontainers/ci@v0.3
